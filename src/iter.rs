@@ -35,7 +35,9 @@ impl Iterator for Iter {
             let mut paths = match self.actively_walking.take() {
                 Some(dir) => dir,
                 None => {
-                    while let Some(path) = self.directories_to_walk.pop_front() {
+                    while let Some(mut path) = self.directories_to_walk.pop_front() {
+                        path = path.canonicalize().map_or(path, |canonical| canonical);
+                        self.visited.insert(path.clone());
                         match fs::read_dir(&path) {
                             Ok(dir) => {
                                 self.actively_walking = Some({
@@ -146,16 +148,13 @@ mod tests {
             fs::write(file, DesktopEntry::from_appid(name.to_string()).to_string()).unwrap();
         }
 
-        let mut iter = Iter::new(
-            fs::read_dir(root)
-                .unwrap()
-                .map(|entry| entry.unwrap().path()),
-        );
-        for (expected, actual) in all_files.iter().zip(&mut iter) {
-            assert_eq!(*expected, actual);
-        }
+        let written_entries = Iter::new(std::iter::once(root.to_owned())).collect::<Vec<_>>();
 
-        assert_eq!(None, iter.next());
+        eprintln!("expected: {all_files:?}\nactual: {written_entries:?}");
+        assert!(all_files.len() == written_entries.len());
+        for entry in written_entries {
+            assert!(all_files.contains(&entry));
+        }
     }
 
     #[test]
@@ -189,7 +188,7 @@ mod tests {
         {
             assert_eq!(entry.appid, de.appid);
             if i > 0 {
-                panic!("Infinite loop");
+                panic!("infinite loop");
             }
         }
     }
